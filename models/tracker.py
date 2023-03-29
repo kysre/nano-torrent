@@ -95,12 +95,14 @@ class TrackerUDPServer:
         loop = asyncio.get_event_loop()
         request: str = data.decode(ENCODING_PROTOCOL)
         if request.startswith('active'):
+            addr = request.split()[2]
             loop.create_task(self.handle_active(addr))
         elif request.startswith('get'):
             file_name = request.split()[1]
             loop.create_task(self.handle_get(addr, file_name))
         elif request.startswith('seed'):
             file_name = request.split()[1]
+            addr = request.split()[2]
             loop.create_task(self.handle_seed(addr, file_name))
         else:
             loop.create_task(self.handle_bad_request(addr))
