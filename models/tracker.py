@@ -152,9 +152,9 @@ class TrackerUDPServer:
                 print('file does not exist')
             else:
                 for log in self._logs:
-                    if log.startswith('file_log'):
+                    if file_name in log:
                         print(log)
         else:
             for log in self._logs:
-                if file_name in log:
+                if log.startswith('file_log'):
                     print(log)

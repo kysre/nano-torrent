@@ -48,7 +48,6 @@ class Client:
         if not seeder_addr:
             await self.send_download_log_to_tracker('failed to get seeder address')
             sys.exit(-2)
-        seeder_addr_str = f'{seeder_addr[0]}:{seeder_addr[1]}'
         try:
             sock = socket.socket()
             sock.connect(seeder_addr)
@@ -57,11 +56,13 @@ class Client:
             self._file_to_seed = self._file_to_seed
             self._file_content = encoded_content.decode(ENCODING_PROTOCOL)
             sock.close()
-            await self.send_download_log_to_tracker(f'received {self._file_to_seed} from {seeder_addr_str}')
+            await self.send_download_log_to_tracker(f'received {self._file_to_seed} from {seeder_addr}')
         except ConnectionRefusedError:
-            await self.send_download_log_to_tracker(f'failed to connect to seeder {seeder_addr_str}')
+            await self.send_download_log_to_tracker(f'failed to connect to seeder {seeder_addr}')
         except TimeoutError:
-            await self.send_download_log_to_tracker(f'timeout to receive {self._file_to_seed} from {seeder_addr_str}')
+            await self.send_download_log_to_tracker(f'timeout to receive {self._file_to_seed} from {seeder_addr}')
+        except Exception as e:
+            await self.send_download_log_to_tracker(f'exception {e}')
 
     async def send_download_log_to_tracker(self, msg: str):
         sock = await asyncudp.create_socket(remote_addr=self._tracker_addr)
@@ -110,6 +111,20 @@ class Client:
             loop.create_task(self.handle_request(client))
 
     async def run_client(self):
+        loop = asyncio.get_running_loop()
+        loop.create_task(self.handle_logs(loop))
         if not self._file_content:
             await self.get_file()
         await self.start_seeding()
+
+    async def handle_logs(self, loop):
+        while True:
+            command = await loop.run_in_executor(None, input)
+            if command == 'request logs':
+                self.print_logs()
+            else:
+                print('invalid command')
+
+    def print_logs(self):
+        for log in self._logs:
+            print(log)

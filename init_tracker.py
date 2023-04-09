@@ -21,7 +21,6 @@ async def handle_logs(loop, tracker_server: TrackerUDPServer):
     while True:
         command = await loop.run_in_executor(None, input)
         if command == 'request logs':
-            # TODO: get client id in request for log
             tracker_server.print_logs()
         elif command == 'file logs all':
             tracker_server.print_file_logs()
@@ -38,4 +37,3 @@ if __name__ == '__main__':
 
     tracker = TrackerUDPServer(tracker_addr)
     asyncio.run(run_tracker(tracker, tracker_addr))
-    # TODO: Add tracker logs
