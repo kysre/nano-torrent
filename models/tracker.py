@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, List
+from typing import Tuple, Dict, List, Optional
 from datetime import datetime
 from dataclasses import dataclass
 from random import randrange
@@ -42,7 +42,17 @@ class TrackerUDPServer:
         delta = abs(datetime.now().timestamp() - last_heartbeat_timestamp)
         return delta <= SEEDER_TIMEOUT_THRESHOLD
 
-    def get_random_seeder_data(self, file_name):
+    def get_random_seeder_data(self, file_name: str) -> Optional[SeederData]:
+        """
+        This function handles get file requests in a lazy manner.
+        It randomly chooses a SeederData and if it isn't active,
+        it chooses another one until no other SeederData exists.
+        If a SeederData isn't active then it proceeds to remove
+        it from that file seeders. This way the requests are handled
+        more efficiently and each file's SeederDatas are updated.
+        :param: file_name: file to download
+        :return: SeederData to download from. None if not exist
+        """
         seeders = self._file_seeders_dict[file_name]
         random_seeder_data = None
         while len(seeders) > 0:
@@ -52,28 +62,38 @@ class TrackerUDPServer:
             else:
                 seeders.remove(random_seeder_data)
                 self._active_seeders_dict.pop(random_seeder_data)
+                print(f'{str(random_seeder_data)} disconnected')
                 random_seeder_data = None
 
         return random_seeder_data
 
-    async def handle_active(self, addr):
-        seeder_data = SeederData(addr[0], addr[1])
+    @staticmethod
+    def get_seeder_data(addr: str) -> SeederData:
+        host, port = addr.split(':')
+        return SeederData(host, port)
+
+    async def handle_active(self, addr: str):
+        seeder_data = self.get_seeder_data(addr)
+        if seeder_data not in self._active_seeders_dict:
+            print(f'{str(seeder_data)} connected')
         self._active_seeders_dict[seeder_data] = datetime.now().timestamp()
 
     async def handle_get(self, addr, file_name):
         encoded_msg = FILE_NOT_FOUND_MSG.encode(ENCODING_PROTOCOL)
         await self._lock.acquire()
+        self.add_log(f'request {addr} get {file_name}')
         try:
             if file_name in self._file_seeders_dict.keys():
                 random_seeder_data = self.get_random_seeder_data(file_name)
                 if random_seeder_data:
                     encoded_msg = f'receive_from {str(random_seeder_data)}'.encode(ENCODING_PROTOCOL)
+                    self.add_log(f'response {addr} download {file_name} from {str(random_seeder_data)}')
         finally:
             self._lock.release()
         self.transport.sendto(encoded_msg, addr)
 
     async def handle_seed(self, addr, file_name):
-        seeder_data = SeederData(addr[0], addr[1])
+        seeder_data = self.get_seeder_data(addr)
         await self._lock.acquire()
         try:
             if file_name not in self._file_seeders_dict.keys():
@@ -81,8 +101,14 @@ class TrackerUDPServer:
             if seeder_data not in self._file_seeders_dict[file_name]:
                 self._file_seeders_dict[file_name].append(seeder_data)
                 self._active_seeders_dict[seeder_data] = datetime.now().timestamp()
+                print(f'{str(seeder_data)} connected')
+                self.add_log(f'file_log {addr} started to seed {file_name}')
         finally:
             self._lock.release()
+
+    async def handle_log(self, log_request: str):
+        log = log_request.replace('log ', '', 1)
+        self._logs.append(log)
 
     async def handle_bad_request(self, addr):
         encoded_msg = BAD_REQUEST_MSG.encode(ENCODING_PROTOCOL)
@@ -95,7 +121,7 @@ class TrackerUDPServer:
         loop = asyncio.get_event_loop()
         request: str = data.decode(ENCODING_PROTOCOL)
         if request.startswith('active'):
-            addr = request.split()[2]
+            addr = request.split()[1]
             loop.create_task(self.handle_active(addr))
         elif request.startswith('get'):
             file_name = request.split()[1]
@@ -104,5 +130,31 @@ class TrackerUDPServer:
             file_name = request.split()[1]
             addr = request.split()[2]
             loop.create_task(self.handle_seed(addr, file_name))
+        elif request.startswith('log'):
+            loop.create_task(self.handle_log(request))
         else:
             loop.create_task(self.handle_bad_request(addr))
+
+    def add_log(self, log: str):
+        self._logs.append(log)
+        print(log)
+
+    def print_logs(self):
+        for log in self._logs:
+            if log.startswith('file_log'):
+                continue
+            else:
+                print(log)
+
+    def print_file_logs(self, file_name: Optional[str] = None):
+        if file_name:
+            if file_name not in self._file_seeders_dict.keys():
+                print('file does not exist')
+            else:
+                for log in self._logs:
+                    if log.startswith('file_log'):
+                        print(log)
+        else:
+            for log in self._logs:
+                if file_name in log:
+                    print(log)
