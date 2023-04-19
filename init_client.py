@@ -2,7 +2,6 @@ import sys
 import asyncio
 
 from models.client import Client
-from consts import FILE_CONTENT
 
 if __name__ == '__main__':
     cmd = sys.argv[1]
@@ -14,9 +13,9 @@ if __name__ == '__main__':
 
     client = None
     if cmd == 'share':
-        client = Client(peer_listen_addr, tracker_addr, file_name, FILE_CONTENT)
+        client = Client(peer_listen_addr, tracker_addr, file_name, True)
     elif cmd == 'get':
-        client = Client(peer_listen_addr, tracker_addr, file_name, None)
+        client = Client(peer_listen_addr, tracker_addr, file_name, False)
     else:
         sys.exit(-1)
 

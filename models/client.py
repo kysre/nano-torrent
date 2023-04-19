@@ -1,7 +1,7 @@
 import asyncio
 import socket
 import sys
-from typing import Tuple, Optional, List
+from typing import Tuple, List
 import asyncudp
 
 from consts import (
@@ -18,12 +18,16 @@ class Client:
                  addr: Tuple[str, int],
                  tracker_addr: Tuple[str, int],
                  file_name: str,
-                 file_content: Optional[str]):
+                 is_seeder: bool):
 
         self._addr: Tuple[str, int] = addr
         self._tracker_addr: Tuple[str, int] = tracker_addr
         self._file_to_seed: str = file_name
-        self._file_content: Optional[str] = file_content
+        if is_seeder:
+            with open(f'db/{file_name}', 'rb') as f:
+                self._file_content = f.read()
+        else:
+            self._file_content = None
         self._logs: List[str] = []
 
     async def get_response_from_tracker(self, request: str) -> str:
@@ -52,9 +56,17 @@ class Client:
             sock = socket.socket()
             sock.connect(seeder_addr)
             sock.send(f'get {self._file_to_seed}'.encode(ENCODING_PROTOCOL))
-            encoded_content = sock.recv(BUFFER_SIZE)
             self._file_to_seed = self._file_to_seed
-            self._file_content = encoded_content.decode(ENCODING_PROTOCOL)
+            data = b''
+            while True:
+                chunk = sock.recv(BUFFER_SIZE)
+                if not chunk:
+                    break
+                data += chunk
+            self._file_content = data
+            if not FILE_NOT_FOUND_MSG.encode(ENCODING_PROTOCOL) == self._file_content:
+                with open(f'db/{self._addr[0]}_{self._addr[1]}_{self._file_to_seed}', 'wb') as f:
+                    f.write(self._file_content)
             sock.close()
             await self.send_download_log_to_tracker(f'received {self._file_to_seed} from {seeder_addr}')
         except ConnectionRefusedError:
@@ -94,8 +106,8 @@ class Client:
             if file_name == self._file_to_seed:
                 response = self._file_content
             else:
-                response = FILE_NOT_FOUND_MSG
-        await loop.sock_sendall(client, response.encode(ENCODING_PROTOCOL))
+                response = FILE_NOT_FOUND_MSG.encode(ENCODING_PROTOCOL)
+        await loop.sock_sendall(client, response)
         client.close()
 
     async def start_seeding(self):
