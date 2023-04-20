@@ -47,32 +47,34 @@ class Client:
             await asyncio.sleep(1)
         return None
 
-    async def get_file(self):
-        seeder_addr = await self.get_seeder_from_tracker(self._file_to_seed)
+    async def get_file(self, filename: str = None):
+        if not filename:
+            filename = self._file_to_seed
+        seeder_addr = await self.get_seeder_from_tracker(filename)
         if not seeder_addr:
             await self.send_download_log_to_tracker('failed to get seeder address')
             sys.exit(-2)
         try:
             sock = socket.socket()
             sock.connect(seeder_addr)
-            sock.send(f'get {self._file_to_seed}'.encode(ENCODING_PROTOCOL))
-            self._file_to_seed = self._file_to_seed
+            sock.send(f'get {filename}'.encode(ENCODING_PROTOCOL))
             data = b''
             while True:
                 chunk = sock.recv(BUFFER_SIZE)
                 if not chunk:
                     break
                 data += chunk
-            self._file_content = data
-            if not FILE_NOT_FOUND_MSG.encode(ENCODING_PROTOCOL) == self._file_content:
-                with open(f'db/{self._addr[0]}_{self._addr[1]}_{self._file_to_seed}', 'wb') as f:
-                    f.write(self._file_content)
+            if not self._file_content:
+                self._file_content = data
+            if not FILE_NOT_FOUND_MSG.encode(ENCODING_PROTOCOL) == data:
+                with open(f'db/{self._addr[0]}_{self._addr[1]}_{filename}', 'wb') as f:
+                    f.write(data)
             sock.close()
-            await self.send_download_log_to_tracker(f'received {self._file_to_seed} from {seeder_addr}')
+            await self.send_download_log_to_tracker(f'received {filename} from {seeder_addr}')
         except ConnectionRefusedError:
             await self.send_download_log_to_tracker(f'failed to connect to seeder {seeder_addr}')
         except TimeoutError:
-            await self.send_download_log_to_tracker(f'timeout to receive {self._file_to_seed} from {seeder_addr}')
+            await self.send_download_log_to_tracker(f'timeout to receive {filename} from {seeder_addr}')
         except Exception as e:
             await self.send_download_log_to_tracker(f'exception {e}')
 
@@ -134,6 +136,9 @@ class Client:
             command = await loop.run_in_executor(None, input)
             if command == 'request logs':
                 self.print_logs()
+            elif command.startswith('get'):
+                filename = command.split()[1]
+                await self.get_file(filename)
             else:
                 print('invalid command')
 
